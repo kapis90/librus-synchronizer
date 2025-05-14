@@ -8,9 +8,7 @@ from gcsa.event import Event
 from gcsa.google_calendar import GoogleCalendar
 from google.oauth2.credentials import Credentials
 
-from create_token_pickle import create_token_pickle
 
-# TOKEN_PATH = Path(__file__).parent / ".credentials" / "token.pickle"
 CREDENTIALS = Credentials(
     token=os.getenv("G_TOKEN"),
     refresh_token=os.getenv("G_REFRESH_TOKEN"),
@@ -22,7 +20,6 @@ CREDENTIALS = Credentials(
 
 class GoogleCalendarWrapper:
     def __init__(self, email_address: str, calendar_id: str):
-        # create_token_pickle(TOKEN_PATH)
         self._google_calendar = GoogleCalendar(email_address, credentials=CREDENTIALS)
         self._secondary_calendar = calendar_id
 
