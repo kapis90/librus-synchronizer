@@ -1,7 +1,8 @@
 name: Run Synchronization
 on:
+  workflow_dispatch:
   schedule:
-    - cron: 57 */1 * * *
+    - cron: "5 */1 * * *"
 
 jobs:
   run-synchronization:
