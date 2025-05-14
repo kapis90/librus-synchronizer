@@ -2,7 +2,7 @@ name: Run Synchronization
 on:
   workflow_dispatch:
   schedule:
-    - cron: "5 */1 * * *"
+    - cron: "15 */1 * * *"
 
 jobs:
   run-synchronization:
@@ -26,3 +26,6 @@ jobs:
         ANTOSIA_CALENDAR_ID: ${{ secrets.ANTOSIA_CALENDAR_ID }}
         EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
         G_TOKEN: ${{ secrets.G_TOKEN }}
+        G_CLIENT_ID: ${{ secrets.G_CLIENT_ID }}
+        G_CLIENT_SECRET: ${{ secrets.G_CLIENT_SECRET }}
+        G_REFRESH_TOKEN: ${{ secrets.G_REFRESH_TOKEN }}
