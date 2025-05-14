@@ -3,11 +3,8 @@ import os
 from datetime import datetime
 
 from librus_apix.client import Client, Token, new_client
-from dotenv import load_dotenv
 from google_calendar_wrapper import GoogleCalendarWrapper
 from librus_synchronizer import LibrusSynchronizer
-
-load_dotenv()
 
 def main():
     client: Client = new_client()

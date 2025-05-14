@@ -1,14 +1,21 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable
 
 from gcsa.event import Event
 from gcsa.google_calendar import GoogleCalendar
 
+from create_token_pickle import create_token_pickle
+
+TOKEN_PATH = Path(__file__).parent / ".credentials" / "token.pickle"
 
 class GoogleCalendarWrapper:
     def __init__(self, email_address: str, calendar_id: str):
-        self._google_calendar = GoogleCalendar(email_address)
+        create_token_pickle(TOKEN_PATH)
+        self._google_calendar = GoogleCalendar(
+            email_address, token_path=str(TOKEN_PATH)
+        )
         self._secondary_calendar = calendar_id
 
     def get_events(self, time_min: datetime) -> Iterable[Event]:
