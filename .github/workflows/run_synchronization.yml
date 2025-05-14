@@ -2,7 +2,7 @@ name: Run Synchronization
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 */1 * * *"
+    - cron: "30 */1 * * *"
 
 jobs:
   run-synchronization:
