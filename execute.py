@@ -6,6 +6,7 @@ from librus_apix.client import Client, Token, new_client
 from google_calendar_wrapper import GoogleCalendarWrapper
 from librus_synchronizer import LibrusSynchronizer
 
+
 def main():
     client: Client = new_client()
     _token: Token = client.get_token(

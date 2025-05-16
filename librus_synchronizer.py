@@ -4,7 +4,7 @@ from librus_apix.client import Client
 from librus_apix.schedule import get_schedule
 
 
-from datetime import datetime
+from datetime import date, datetime
 
 from google_calendar_wrapper import GoogleCalendarWrapper
 
@@ -22,7 +22,7 @@ class LibrusSynchronizer:
                 event = Event(
                     summary=f"{event.title}: {event.subject}",
                     description=f"{event.data['Opis']}",
-                    start=datetime(int(year), int(month), int(day)),
+                    start=date(int(year), int(month), int(day)),
                 )
                 self.calendar.add_event(event)
                 print(f"Event added: {event}")

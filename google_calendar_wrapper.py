@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 import os
-from pathlib import Path
 from typing import Iterable
 
 from gcsa.event import Event
