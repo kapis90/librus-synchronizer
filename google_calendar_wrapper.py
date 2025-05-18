@@ -5,33 +5,32 @@ from typing import Iterable
 
 from gcsa.event import Event
 from gcsa.google_calendar import GoogleCalendar
-from google.oauth2.credentials import Credentials
-
-
-CREDENTIALS = Credentials(
-    token=os.getenv("G_TOKEN"),
-    refresh_token=os.getenv("G_REFRESH_TOKEN"),
-    token_uri="https://oauth2.googleapis.com/token",
-    client_id=os.getenv("G_CLIENT_ID"),
-    client_secret=os.getenv("G_CLIENT_SECRET"),
-)
+from google.oauth2.service_account import Credentials
+import json
 
 
 class GoogleCalendarWrapper:
-    def __init__(self, email_address: str, calendar_id: str):
-        self._google_calendar = GoogleCalendar(email_address, credentials=CREDENTIALS)
+    def __init__(self, calendar_id: str):
+        self._google_calendar = GoogleCalendar(
+            credentials=self._get_service_account_credentials(),  # type: ignore
+        )
         self._secondary_calendar = calendar_id
+
+    def _get_service_account_credentials(self) -> Credentials:
+        service_account_info = json.loads(str(os.getenv("G_SERVICE_ACCOUNT_JSON")))
+        scopes = ["https://www.googleapis.com/auth/calendar"]
+        creds = Credentials.from_service_account_info(
+            service_account_info, scopes=scopes
+        )
+        return creds
 
     def get_events(self, time_min: datetime) -> Iterable[Event]:
         return self._google_calendar.get_events(
             time_min=time_min, calendar_id=self._secondary_calendar
         )
 
-    def add_event(self, event: Event) -> Event:
-        event = self._google_calendar.add_event(event)
-        return self._google_calendar.move_event(
-            event, destination_calendar_id=self._secondary_calendar
-        )
+    def add_event(self, event: Event) -> None:
+        self._google_calendar.add_event(event, calendar_id=self._secondary_calendar)
 
     def cleanup_calendar(self, start_date: datetime) -> None:
         """Cleanup calendar by removing all events after a certain date"""

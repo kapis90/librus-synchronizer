@@ -23,9 +23,5 @@ jobs:
       env:
         LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME }}
         LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
-        ANTOSIA_CALENDAR_ID: ${{ secrets.ANTOSIA_CALENDAR_ID }}
-        EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
-        G_TOKEN: ${{ secrets.G_TOKEN }}
-        G_CLIENT_ID: ${{ secrets.G_CLIENT_ID }}
-        G_CLIENT_SECRET: ${{ secrets.G_CLIENT_SECRET }}
-        G_REFRESH_TOKEN: ${{ secrets.G_REFRESH_TOKEN }}
+        CALENDAR_ID: ${{ secrets.ANTOSIA_CALENDAR_ID }}
+        G_SERVICE_ACCOUNT_JSON: ${{ secrets.G_SERVICE_ACCOUNT_JSON }}

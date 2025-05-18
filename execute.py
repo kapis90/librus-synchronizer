@@ -12,14 +12,13 @@ def main():
     _token: Token = client.get_token(
         str(os.getenv("LIBRUS_USERNAME")), str(os.getenv("LIBRUS_PASSWORD"))
     )
-    antosia_calendar = GoogleCalendarWrapper(
-        email_address=str(os.getenv("EMAIL_ADDRESS")),
-        calendar_id=str(os.getenv("ANTOSIA_CALENDAR_ID")),
+    calendar = GoogleCalendarWrapper(
+        calendar_id=str(os.getenv("CALENDAR_ID")),
     )
     client.token = _token
     librus_synchronizer = LibrusSynchronizer(
         librus_client=client,
-        calendar=antosia_calendar,
+        calendar=calendar,
     )
     librus_synchronizer.fill_calendar(
         str(datetime.today().month), str(datetime.today().year)
