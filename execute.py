@@ -2,7 +2,9 @@
 import os
 from datetime import datetime
 
+from dateutil.relativedelta import relativedelta
 from librus_apix.client import Client, Token, new_client
+
 from google_calendar_wrapper import GoogleCalendarWrapper
 from librus_synchronizer import LibrusSynchronizer
 
@@ -20,12 +22,10 @@ def main():
         librus_client=client,
         calendar=calendar,
     )
-    librus_synchronizer.fill_calendar(
-        str(datetime.today().month), str(datetime.today().year)
-    )
-    librus_synchronizer.fill_calendar(
-        str(datetime.today().month + 1), str(datetime.today().year)
-    )
+    today = datetime.today()
+    next_month = today + relativedelta(months=1)
+    librus_synchronizer.fill_calendar(str(today.month), str(today.year))
+    librus_synchronizer.fill_calendar(str(next_month.month), str(next_month.year))
 
 
 if __name__ == "__main__":
