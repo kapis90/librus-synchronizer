@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from gcsa.event import Event
 from librus_apix.client import Client
-from librus_apix.schedule import get_schedule
+from librus_apix.schedule import get_schedule, schedule_detail
 
 
 from datetime import date, datetime
@@ -19,9 +19,16 @@ class LibrusSynchronizer:
         schedule = get_schedule(self.librus_client, month, year)
         for day in schedule:
             for event in schedule[day]:
+                print(event.title)
+                prefix, href = event.href.split('/')
+                details = schedule_detail(self.librus_client, prefix, href)
+                try: 
+                    description_details = details['Opis']
+                except KeyError:
+                    description_details = "Brak szczegółów"
                 event = Event(
                     summary=f"{event.title}: {event.subject}",
-                    description=f"{event.data['Opis']}",
+                    description=f"OPIS: {event.data['Opis']}\nSZCZEGÓŁY: {description_details}",
                     start=date(int(year), int(month), int(day)),
                 )
                 self.calendar.add_event(event)
