@@ -2,6 +2,7 @@
 from gcsa.event import Event
 from librus_apix.client import Client
 from librus_apix.schedule import get_schedule, schedule_detail
+from librus_apix.homework import get_homework
 
 
 from datetime import date, datetime
@@ -25,8 +26,7 @@ class LibrusSynchronizer:
                 try:
                     description = details["Opis"]
                 except KeyError:
-                    # if details description is missing, use the one from the event
-                    description = event.data["Opis"]
+                    description = event.data["Opis"] # if details description is missing, use the one from the event
                 event = Event(
                     summary=f"{event.title}: {event.subject}",
                     description=description,
