@@ -1,0 +1,29 @@
+name: Ruff Lint and Format
+
+on:
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  ruff-check:
+    name: Ruff Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run ruff check
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: check --output-format=github
+
+  ruff-format:
+    name: Ruff Format (Check only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run ruff format --check --diff
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: format --check --diff
