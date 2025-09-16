@@ -19,7 +19,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
       - name: Install dependencies with uv
-        run: uv sync --locked --all-extras
+        run: uv sync
       - name: Run synchronization script (Tosia)
         if: matrix.name == 'Tosia'
         run: python execute.py
