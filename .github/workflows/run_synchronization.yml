@@ -23,6 +23,7 @@ jobs:
       - name: Install dependencies with uv
         run: |
           uv venv
+          .venv/bin/activate
           uv pip install .
       - name: Run synchronization script (Tosia)
         if: matrix.name == 'Tosia'
