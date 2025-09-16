@@ -12,19 +12,14 @@ jobs:
         name: [Tosia, Dorota]
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
+      - name: "Set up Python"
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version-file: "pyproject.toml"
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-      - name: Add uv to PATH
-        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uses: astral-sh/setup-uv@v6
       - name: Install dependencies with uv
-        run: |
-          uv venv
-          .venv/bin/activate
-          uv pip install .
+        run: uv sync --locked --all-extras
       - name: Run synchronization script (Tosia)
         if: matrix.name == 'Tosia'
         run: python execute.py
