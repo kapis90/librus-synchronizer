@@ -22,7 +22,7 @@ jobs:
         run: uv sync
       - name: Run synchronization script (Tosia)
         if: matrix.name == 'Tosia'
-        run: python execute.py
+        run: uv run execute.py
         env:
           LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME_T }}
           LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
@@ -30,7 +30,7 @@ jobs:
           G_SERVICE_ACCOUNT_JSON: ${{ secrets.G_SERVICE_ACCOUNT_JSON }}
       - name: Run synchronization script (Dorota)
         if: matrix.name == 'Dorota'
-        run: python execute.py
+        run: uv run execute.py
         env:
           LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME_D }}
           LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
