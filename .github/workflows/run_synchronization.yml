@@ -12,17 +12,17 @@ jobs:
         name: [Tosia, Dorota]
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
+      - name: "Set up Python"
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python-version-file: "pyproject.toml"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Install dependencies with uv
+        run: uv sync
       - name: Run synchronization script (Tosia)
         if: matrix.name == 'Tosia'
-        run: python execute.py
+        run: uv run execute.py
         env:
           LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME_T }}
           LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
@@ -30,7 +30,7 @@ jobs:
           G_SERVICE_ACCOUNT_JSON: ${{ secrets.G_SERVICE_ACCOUNT_JSON }}
       - name: Run synchronization script (Dorota)
         if: matrix.name == 'Dorota'
-        run: python execute.py
+        run: uv run execute.py
         env:
           LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME_D }}
           LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}

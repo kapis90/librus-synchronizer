@@ -7,5 +7,13 @@ requires-python = ">=3.12"
 dependencies = [
     "gcsa>=2.5.1",
     "librus-apix>=1.3.1",
+    "python-dateutil>=2.9.0.post0",
+]
+
+[dependency-groups]
+dev = [
     "ruff>=0.11.10",
 ]
+
+[tool.setuptools]
+py-modules = ["execute", "google_calendar_wrapper", "librus_synchronizer"]
