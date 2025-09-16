@@ -13,3 +13,6 @@ dependencies = [
 dev = [
     "ruff>=0.11.10",
 ]
+
+[tool.setuptools]
+py-modules = ["execute", "google_calendar_wrapper", "librus_synchronizer"]
