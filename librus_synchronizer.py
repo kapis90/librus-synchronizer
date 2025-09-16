@@ -20,11 +20,11 @@ class LibrusSynchronizer:
         for day in schedule:
             for event in schedule[day]:
                 print(event.title)
-                prefix, href = event.href.split("/")
-                details = schedule_detail(self.librus_client, prefix, href)
                 try:
+                    prefix, href = event.href.split("/")
+                    details = schedule_detail(self.librus_client, prefix, href)
                     description = details["Opis"]
-                except KeyError:
+                except (KeyError, ValueError):
                     description = event.data[
                         "Opis"
                     ]  # if details description is missing, use the one from the event
