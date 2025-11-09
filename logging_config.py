@@ -5,6 +5,7 @@ Provides a simple setup function that configures a console handler and an
 optional file handler. Call `setup_logging()` early in the application's
 startup (for example in `execute.py`).
 """
+
 from __future__ import annotations
 
 import logging

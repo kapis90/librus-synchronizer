@@ -31,7 +31,11 @@ class LibrusSynchronizer:
         events = []
         for day in schedule:
             for librus_event in schedule[day]:
-                logger.debug("Processing raw event: %s (day=%s)", getattr(librus_event, 'title', repr(librus_event)), day)
+                logger.debug(
+                    "Processing raw event: %s (day=%s)",
+                    getattr(librus_event, "title", repr(librus_event)),
+                    day,
+                )
                 description = self._get_description(librus_event)
                 try:
                     day_int = int(day)
@@ -39,7 +43,11 @@ class LibrusSynchronizer:
                     year_int = int(year)
                 except (TypeError, ValueError):
                     # if any of the date parts are invalid, skip this event
-                    logger.warning("Skipping event with invalid date (%s): %s", day, repr(librus_event))
+                    logger.warning(
+                        "Skipping event with invalid date (%s): %s",
+                        day,
+                        repr(librus_event),
+                    )
                     continue
 
                 gcsa_event = Event(
@@ -64,11 +72,19 @@ class LibrusSynchronizer:
             details = schedule_detail(self.librus_client, prefix, href)
             # prefer the detailed description if present
             desc = details.get("Opis", librus_event.data.get("Opis", ""))
-            logger.debug("Fetched detailed description for href=%s: %s", librus_event.href, bool(desc))
+            logger.debug(
+                "Fetched detailed description for href=%s: %s",
+                librus_event.href,
+                bool(desc),
+            )
             return desc
         except (KeyError, ValueError) as exc:
             # Any problem retrieving details -> fallback
-            logger.debug("Unable to fetch detailed description for event=%s: %s", getattr(librus_event, 'href', repr(librus_event)), exc)
+            logger.debug(
+                "Unable to fetch detailed description for event=%s: %s",
+                getattr(librus_event, "href", repr(librus_event)),
+                exc,
+            )
             return librus_event.data.get("Opis", "")
 
     def fill_calendar(self, month: str, year: str) -> None:
