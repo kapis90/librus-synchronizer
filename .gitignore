@@ -12,3 +12,6 @@ wheels/
 # Environment variables
 .env
 .credentials
+
+# Logs
+librus_sync.log
