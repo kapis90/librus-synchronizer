@@ -1,6 +1,11 @@
 name: Run Synchronization
 on:
   workflow_dispatch:
+    inputs:
+      resumeUrl:
+        description: 'Resume URL'
+        required: false
+        type: string
   schedule:
     - cron: "42 * * * *"
 
