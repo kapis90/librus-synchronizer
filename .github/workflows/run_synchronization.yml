@@ -1,6 +1,11 @@
 name: Run Synchronization
 on:
   workflow_dispatch:
+    inputs:
+      resumeUrl:
+        description: 'Resume URL'
+        required: false
+        type: string
   schedule:
     - cron: "42 * * * *"
 
@@ -36,3 +41,15 @@ jobs:
           LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
           CALENDAR_ID: ${{ secrets.DOROTA_CALENDAR_ID }}
           G_SERVICE_ACCOUNT_JSON: ${{ secrets.G_SERVICE_ACCOUNT_JSON }}
+      - name: Notify n8n workflow completed
+        if: always()
+        run: |
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d '{
+              "status": "${{ job.status }}",
+              "workflow": "Run Synchronization",
+              "run_id": "${{ github.run_id }}",
+              "run_number": "${{ github.run_number }}"
+            }' \
+            "${{ github.event.inputs.resumeUrl }}"
