@@ -36,15 +36,10 @@ def main():
     for message in messages:
         if message.unread:
             content = message_content(client, message.href)
-            unread_messages.append({
-                "title": message.title,
-                "content": content
-            })
+            unread_messages.append({"title": message.title, "content": content})
 
     # Output as JSON for webhook payload
-    payload = {
-        "messages": unread_messages
-    }
+    payload = {"messages": unread_messages}
     print(json.dumps(payload))
 
 
