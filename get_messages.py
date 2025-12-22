@@ -34,14 +34,14 @@ def main():
     messages = get_received(client, page=1)
     unread_messages = []
     for message in messages:
-        if message.unread:
-            content = message_content(client, message.href)
-            unread_messages.append({
-                "title": message.title,
-                "content": content.content,
-                "author": content.author,
-                "date": content.date
-            })
+        # if message.unread:
+      content = message_content(client, message.href)
+      unread_messages.append({
+          "title": message.title,
+          "content": content.content,
+          "author": content.author,
+          "date": content.date
+      })
 
     # Output as JSON for webhook payload
     payload = {"messages": unread_messages}
