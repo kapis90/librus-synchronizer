@@ -1,0 +1,40 @@
+name: Get Messages
+
+on:
+  workflow_dispatch:  # Manual trigger
+    inputs:
+        resumeUrl:
+            description: 'Resume URL'
+            required: false
+            type: string
+jobs:
+  get-messages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Install dependencies with uv
+        run: uv sync
+
+      - name: Run get_messages script
+        id: get_messages
+        env:
+            LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME_T }}
+            LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
+            DEBUG: ${{ vars.DEBUG }}
+        run: |
+            output=$(python get_messages.py)
+            echo "payload=$output" >> $GITHUB_OUTPUT
+
+      - name: Send webhook
+        if: steps.get_messages.outputs.payload != '{"messages":[]}'
+        run: |
+            curl -X POST ${{ github.event.inputs.resumeUrl }} \
+            -H "Content-Type: application/json" \
+            -d '${{ steps.get_messages.outputs.payload }}'
