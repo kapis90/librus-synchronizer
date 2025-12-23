@@ -33,7 +33,7 @@ jobs:
             LIBRUS_USERNAME: ${{ github.event.inputs.who == 'Tosia' && secrets.LIBRUS_USERNAME_T || secrets.LIBRUS_USERNAME_D }}
             LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
         run: |
-            output=$(uv run get_undread_messages.py)
+            output=$(uv run get_unread_messages.py)
             echo "payload=$output" >> $GITHUB_OUTPUT
 
       - name: Send webhook
