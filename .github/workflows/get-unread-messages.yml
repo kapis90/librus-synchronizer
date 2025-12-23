@@ -1,4 +1,4 @@
-name: Get Messages
+name: Get Undread Messages
 
 on:
   workflow_dispatch:  # Manual trigger
