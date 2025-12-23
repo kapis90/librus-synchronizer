@@ -1,4 +1,4 @@
-name: Get Messages
+name: Get Undread Messages
 
 on:
   workflow_dispatch:  # Manual trigger
@@ -7,6 +7,11 @@ on:
             description: 'Resume URL'
             required: false
             type: string
+        who: 
+            description: 'Who to get messages for (Tosia or Dorota)'
+            required: true
+            options: [Tosia, Dorota]
+            type: choice
 jobs:
   get-messages:
     runs-on: ubuntu-latest
@@ -25,11 +30,10 @@ jobs:
       - name: Run get_messages script
         id: get_messages
         env:
-            LIBRUS_USERNAME: ${{ secrets.LIBRUS_USERNAME_T }}
+            LIBRUS_USERNAME: ${{ github.event.inputs.who == 'Tosia' && secrets.LIBRUS_USERNAME_T || secrets.LIBRUS_USERNAME_D }}
             LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
-            DEBUG: ${{ vars.DEBUG }}
         run: |
-            output=$(python get_messages.py)
+            output=$(uv run get_messages.py)
             echo "payload=$output" >> $GITHUB_OUTPUT
 
       - name: Send webhook
