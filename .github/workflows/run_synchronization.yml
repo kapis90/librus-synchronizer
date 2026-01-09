@@ -42,7 +42,7 @@ jobs:
           CALENDAR_ID: ${{ secrets.DOROTA_CALENDAR_ID }}
           G_SERVICE_ACCOUNT_JSON: ${{ secrets.G_SERVICE_ACCOUNT_JSON }}
       - name: Notify n8n workflow completed
-        if: always()
+        if: ${{ always() && github.event.inputs.resumeUrl != '' }}
         run: |
           curl -X POST \
             -H "Content-Type: application/json" \
