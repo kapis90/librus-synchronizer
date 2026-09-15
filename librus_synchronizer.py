@@ -36,11 +36,11 @@ class LibrusSynchronizer:
                     getattr(librus_event, "title", repr(librus_event)),
                     day,
                 )
-                description = self._get_description(librus_event)
                 try:
                     day_int = int(day)
                     month_int = int(month)
                     year_int = int(year)
+                    start_date = date(year_int, month_int, day_int)
                 except (TypeError, ValueError):
                     # if any of the date parts are invalid, skip this event
                     logger.warning(
@@ -50,10 +50,11 @@ class LibrusSynchronizer:
                     )
                     continue
 
+                description = self._get_description(librus_event)
                 gcsa_event = Event(
                     summary=f"{librus_event.title}: {librus_event.subject}",
                     description=description,
-                    start=date(year_int, month_int, day_int),
+                    start=start_date,
                 )
                 events.append(gcsa_event)
                 logger.info("Prepared event: %s", gcsa_event)
@@ -66,26 +67,28 @@ class LibrusSynchronizer:
         Falls back to the description available in `librus_event.data` if any
         error occurs or the detailed description is missing.
         """
+        fallback = (getattr(librus_event, "data", None) or {}).get("Opis", "")
         try:
             # href is expected to contain something like "prefix/href"
-            prefix, href = librus_event.href.split("/")
-            details = schedule_detail(self.librus_client, prefix, href)
-            # prefer the detailed description if present
-            desc = details.get("Opis", librus_event.data.get("Opis", ""))
+            href = getattr(librus_event, "href", "") or ""
+            prefix, detail = href.split("/", 1)
+            details = schedule_detail(self.librus_client, prefix, detail)
+            # prefer the detailed description if present, else fall back
+            desc = (details or {}).get("Opis") or fallback
             logger.debug(
                 "Fetched detailed description for href=%s: %s",
-                librus_event.href,
+                href,
                 bool(desc),
             )
             return desc
-        except (KeyError, ValueError) as exc:
+        except Exception as exc:
             # Any problem retrieving details -> fallback
             logger.debug(
                 "Unable to fetch detailed description for event=%s: %s",
                 getattr(librus_event, "href", repr(librus_event)),
                 exc,
             )
-            return librus_event.data.get("Opis", "")
+            return fallback
 
     def fill_calendar(self, month: str, year: str) -> None:
         """Generate events for the month, clean up calendar and add them.
