@@ -17,6 +17,7 @@ import os
 import re
 import sys
 from typing import List
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Tag
 from librus_apix.client import Client, Token, new_client
@@ -78,19 +79,40 @@ def _is_unread(title_cell: Tag) -> bool:
     return False
 
 
-def _safe_href(raw_href: object) -> str:
-    """Extract the message id from a link href without ever raising.
+def _raw_link(cell: Tag) -> str:
+    """Return the first link href in a cell, or "" if there is none."""
+    link = cell.find("a")
+    if isinstance(link, Tag):
+        href = link.attrs.get("href", "")
+        if isinstance(href, str):
+            return href.strip()
+    return ""
 
-    Upstream takes ``href.split("/")[4]`` which raises IndexError on short
-    hrefs and returns the wrong segment on longer ones; the id is simply
-    the last path segment.
+
+def _content_ref(client: Client, raw_href: object) -> str:
+    """Build the content reference for message_content() without ever raising.
+
+    Real inbox links look like ``/wiadomosci/1/5/<msgId>/f0`` and
+    message_content() appends its argument to MESSAGE_URL, so we return the
+    href path relative to MESSAGE_URL's path (e.g. ``<msgId>/f0``). This
+    preserves the exact server-issued path instead of guessing which
+    segment is the id. Unknown shapes fall back to the last path segment;
+    non-http(s) links (e.g. ``javascript:...``) and empty input yield "".
     """
     if not isinstance(raw_href, str) or not raw_href.strip():
         return ""
-    cleaned = raw_href.strip().split("?")[0].split("#")[0].rstrip("/")
-    if not cleaned:
+    parts = urlparse(raw_href.strip())
+    if parts.scheme and parts.scheme not in ("http", "https"):
         return ""
-    return cleaned.split("/")[-1].strip()
+    path = parts.path
+    if not path or not path.strip("/"):
+        return ""
+    base_path = urlparse(client.MESSAGE_URL).path.rstrip("/")
+    if path.startswith(base_path + "/"):
+        return path[len(base_path) + 1 :].strip().strip("/")
+    if path == base_path:
+        return ""
+    return path.rstrip("/").split("/")[-1].strip()
 
 
 def _parse_inbox(soup: BeautifulSoup) -> List[Message]:
@@ -120,11 +142,14 @@ def _parse_inbox(soup: BeautifulSoup) -> List[Message]:
             attachment.find("img") is not None if isinstance(attachment, Tag) else False
         )
         unread = _is_unread(title_cell) if isinstance(title_cell, Tag) else False
+        # Prefer the title-cell link (the message link); fall back to the
+        # author-cell link. The raw href is stored; _build_entry() resolves
+        # it against MESSAGE_URL when fetching content.
         href = ""
-        if isinstance(author_cell, Tag):
-            author_link = author_cell.find("a")
-            if isinstance(author_link, Tag):
-                href = _safe_href(author_link.attrs.get("href", ""))
+        if isinstance(title_cell, Tag):
+            href = _raw_link(title_cell)
+        if not href and isinstance(author_cell, Tag):
+            href = _raw_link(author_cell)
         messages.append(
             Message(
                 author=author_cell.text.strip(),
@@ -191,29 +216,31 @@ def fetch_all_received(client: Client) -> List[Message]:
 def _build_entry(client: Client, message: Message) -> dict | None:
     """Fetch content for one message and build its payload dict.
 
-    Returns None (after logging) when the message has no link or its
+    Returns None (after logging) when the message has no usable link or its
     content cannot be fetched, so callers can skip it.
     """
-    if not message.href:
+    ref = _content_ref(client, message.href)
+    if not ref:
         logger.warning(
-            "Skipping message without link (title=%r author=%r)",
+            "Skipping message without usable link (title=%r author=%r href=%r)",
             message.title,
             message.author,
+            message.href,
         )
         return None
     try:
         # NOTE: opening a message may mark it as read server-side,
         # so each unread message is typically reported only once.
-        content = message_content(client, message.href)
+        content = message_content(client, ref)
     except Exception:
         logger.warning(
-            "Skipping message id=%r: failed to fetch content",
-            message.href,
+            "Skipping message ref=%r: failed to fetch content",
+            ref,
             exc_info=True,
         )
         return None
     return {
-        "id": message.href,
+        "id": ref,
         "title": content.title or message.title,
         "content": content.content,
         "author": content.author or message.author,
