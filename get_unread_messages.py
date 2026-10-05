@@ -3,6 +3,12 @@
 
 Stdout contains ONLY the JSON payload (logs go to stderr), so a workflow
 can safely redirect stdout to a file and POST it.
+
+Environment:
+    FETCH_MODE: "unread" (default) filters by unread flag; "last" skips
+        the unread check and returns the most recent inbox message.
+        "last" is intended for testing the downstream webhook plumbing
+        when there are no unread messages.
 """
 
 import json
@@ -182,6 +188,62 @@ def fetch_all_received(client: Client) -> List[Message]:
     return all_messages
 
 
+def _build_entry(client: Client, message: Message) -> dict | None:
+    """Fetch content for one message and build its payload dict.
+
+    Returns None (after logging) when the message has no link or its
+    content cannot be fetched, so callers can skip it.
+    """
+    if not message.href:
+        logger.warning(
+            "Skipping message without link (title=%r author=%r)",
+            message.title,
+            message.author,
+        )
+        return None
+    try:
+        # NOTE: opening a message may mark it as read server-side,
+        # so each unread message is typically reported only once.
+        content = message_content(client, message.href)
+    except Exception:
+        logger.warning(
+            "Skipping message id=%r: failed to fetch content",
+            message.href,
+            exc_info=True,
+        )
+        return None
+    return {
+        "id": message.href,
+        "title": content.title or message.title,
+        "content": content.content,
+        "author": content.author or message.author,
+        "date": content.date or message.date,
+        "has_attachment": message.has_attachment,
+    }
+
+
+def _select_last_message(client: Client) -> list:
+    """Return a one-item payload with the most recent inbox message.
+
+    Testing helper: ignores the unread flag. Only the first page is
+    needed since the newest message is listed first.
+    """
+    logger.warning(
+        "FETCH_MODE=last: returning most recent message regardless of "
+        "read state (testing only)"
+    )
+    page = _fetch_received_page(client, 1)
+    if not page:
+        logger.info("Inbox is empty, nothing to report")
+        return []
+    for message in page:
+        entry = _build_entry(client, message)
+        if entry is not None:
+            return [entry]
+    logger.error("Most recent message(s) could not be fetched")
+    sys.exit(1)
+
+
 def main():
     # configure logging early; allow DEBUG by environment flag
     debug = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
@@ -190,9 +252,19 @@ def main():
 
     username = _require_env("LIBRUS_USERNAME")
     password = _require_env("LIBRUS_PASSWORD")
+    mode = os.getenv("FETCH_MODE", "unread").strip().lower()
+    if mode not in ("unread", "last"):
+        logger.error("Invalid FETCH_MODE=%r (expected 'unread' or 'last')", mode)
+        sys.exit(1)
 
     client: Client = new_client()
     __acquire_librus_token(client, username, password)
+
+    if mode == "last":
+        reported = _select_last_message(client)
+        logger.info("Reporting %d message(s) (FETCH_MODE=last)", len(reported))
+        print(json.dumps({"messages": reported}, ensure_ascii=False))
+        return
 
     messages = fetch_all_received(client)
     logger.info("Fetched %d message(s) from inbox", len(messages))
@@ -202,34 +274,9 @@ def main():
 
     unread_messages = []
     for message in unread:
-        if not message.href:
-            logger.warning(
-                "Skipping unread message without link (title=%r author=%r)",
-                message.title,
-                message.author,
-            )
-            continue
-        try:
-            # NOTE: opening a message may mark it as read server-side,
-            # so each unread message is typically reported only once.
-            content = message_content(client, message.href)
-        except Exception:
-            logger.warning(
-                "Skipping message id=%r: failed to fetch content",
-                message.href,
-                exc_info=True,
-            )
-            continue
-        unread_messages.append(
-            {
-                "id": message.href,
-                "title": content.title or message.title,
-                "content": content.content,
-                "author": content.author or message.author,
-                "date": content.date or message.date,
-                "has_attachment": message.has_attachment,
-            }
-        )
+        entry = _build_entry(client, message)
+        if entry is not None:
+            unread_messages.append(entry)
 
     logger.info("Reporting %d unread message(s) with content", len(unread_messages))
     # Output as JSON for webhook payload (stdout must stay pure JSON)

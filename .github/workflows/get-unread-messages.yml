@@ -1,7 +1,7 @@
 name: Get Unread Messages
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Manual trigger (also callable via REST API, e.g. from n8n)
     inputs:
         resumeUrl:
             description: 'Resume URL'
@@ -12,6 +12,14 @@ on:
             required: true
             options: [Tosia, Dorota]
             type: choice
+        mode:
+            description: 'Which messages to return (last = most recent, for testing)'
+            required: false
+            default: 'unread'
+            options: [unread, last]
+            type: choice
+  repository_dispatch:  # External trigger, e.g. from n8n with client_payload {who, resumeUrl, mode}
+    types: [get-messages]
 jobs:
   get-messages:
     runs-on: ubuntu-latest
@@ -30,9 +38,11 @@ jobs:
       - name: Run get_messages script
         id: get_messages
         env:
-            LIBRUS_USERNAME: ${{ github.event.inputs.who == 'Tosia' && secrets.LIBRUS_USERNAME_T || secrets.LIBRUS_USERNAME_D }}
+            LIBRUS_USERNAME: ${{ (github.event.inputs.who || github.event.client_payload.who) == 'Tosia' && secrets.LIBRUS_USERNAME_T || secrets.LIBRUS_USERNAME_D }}
             LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
+            FETCH_MODE: ${{ github.event.inputs.mode || github.event.client_payload.mode || 'unread' }}
         run: |
+            echo "mode=$FETCH_MODE"
             # stdout is pure JSON (logs go to stderr); a non-zero exit fails
             # the step so no webhook is sent on error.
             uv run get_unread_messages.py > payload.json
@@ -48,7 +58,7 @@ jobs:
       - name: Send webhook
         if: steps.get_messages.outputs.count != '0'
         env:
-          RESUME_URL: ${{ github.event.inputs.resumeUrl }}
+          RESUME_URL: ${{ github.event.inputs.resumeUrl || github.event.client_payload.resumeUrl }}
         run: |
             if [ -z "$RESUME_URL" ]; then
               echo "resumeUrl not provided, skipping webhook"
