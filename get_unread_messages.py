@@ -192,12 +192,15 @@ def fetch_all_received(client: Client) -> List[Message]:
             exc_info=True,
         )
         max_page_hint = None
-    # Upstream get_max_page_number() returns N-1 for N pages, so probe a
-    # couple of pages past the hint; the empty-page break keeps this cheap.
+    # Upstream get_max_page_number() returns N-1 for N pages, so the last
+    # real page is hint+1. Probing further is safe: out-of-range pages are
+    # clamped by the server to the last page instead of coming back empty,
+    # so the seen-href check below stops the loop on a repeated page.
     cap = _page_cap()
     if max_page_hint is not None:
-        cap = min(cap, max(1, max_page_hint + 2))
+        cap = min(cap, max(1, max_page_hint + 1))
     all_messages: List[Message] = []
+    seen_hrefs: set[str] = set()
     for page in range(1, cap + 1):
         try:
             messages = _fetch_received_page(client, page)
@@ -208,8 +211,23 @@ def fetch_all_received(client: Client) -> List[Message]:
             break
         if not messages:
             break
-        logger.debug("Page %d: %d message(s)", page, len(messages))
-        all_messages.extend(messages)
+        fresh = [m for m in messages if not m.href or m.href not in seen_hrefs]
+        if len(fresh) < len(messages):
+            if not fresh:
+                logger.info(
+                    "Page %d repeats earlier messages (server clamped the "
+                    "page); stopping pagination",
+                    page,
+                )
+                break
+            logger.warning(
+                "Page %d contains %d already-seen message(s)",
+                page,
+                len(messages) - len(fresh),
+            )
+        seen_hrefs.update(m.href for m in fresh if m.href)
+        logger.debug("Page %d: %d message(s)", page, len(fresh))
+        all_messages.extend(fresh)
     return all_messages
 
 
@@ -300,10 +318,17 @@ def main():
     logger.info("%d unread message(s) found", len(unread))
 
     unread_messages = []
+    seen_ids: set[str] = set()
     for message in unread:
         entry = _build_entry(client, message)
-        if entry is not None:
-            unread_messages.append(entry)
+        if entry is None:
+            continue
+        entry_id = entry["id"]
+        if entry_id in seen_ids:
+            logger.warning("Skipping duplicate message id=%r", entry_id)
+            continue
+        seen_ids.add(entry_id)
+        unread_messages.append(entry)
 
     logger.info("Reporting %d unread message(s) with content", len(unread_messages))
     # Output as JSON for webhook payload (stdout must stay pure JSON)
