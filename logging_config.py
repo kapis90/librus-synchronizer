@@ -27,6 +27,10 @@ def setup_logging(debug: bool = False, log_file: Optional[str] = None) -> None:
     if root.handlers:
         for h in list(root.handlers):
             root.removeHandler(h)
+            try:
+                h.close()
+            except Exception:
+                pass
 
     root.setLevel(level)
 

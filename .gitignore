@@ -13,5 +13,9 @@ wheels/
 .env
 .credentials
 
+# Coverage data
+.coverage
+coverage/
+
 # Logs
 librus_sync.log
