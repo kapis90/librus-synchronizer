@@ -1,13 +1,12 @@
-# -*- coding: utf-8 -*-
-from datetime import datetime
+import json
+import logging
 import os
-from typing import Iterable
+from collections.abc import Iterable
+from datetime import datetime
 
 from gcsa.event import Event
 from gcsa.google_calendar import GoogleCalendar
 from google.oauth2.service_account import Credentials
-import json
-import logging
 
 logger = logging.getLogger(__name__)
 
