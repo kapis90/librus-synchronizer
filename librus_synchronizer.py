@@ -1,14 +1,11 @@
-# -*- coding: utf-8 -*-
-from typing import List, Optional
+import logging
+from datetime import date, datetime
+
 from gcsa.event import Event
 from librus_apix.client import Client
 from librus_apix.schedule import get_schedule, schedule_detail
 
-
-from datetime import date, datetime
-
 from google_calendar_wrapper import GoogleCalendarWrapper
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +15,7 @@ class LibrusSynchronizer:
         self.calendar = calendar
         self.librus_client = librus_client
 
-    def get_events_for_month(self, month: str, year: str) -> List[Event]:
+    def get_events_for_month(self, month: str, year: str) -> list[Event]:
         """Build and return a list of `gcsa.event.Event` objects for the
         given month/year using the configured `librus_client`.
 
@@ -60,7 +57,7 @@ class LibrusSynchronizer:
 
         return events
 
-    def _get_description(self, librus_event) -> Optional[str]:
+    def _get_description(self, librus_event) -> str | None:
         """Attempt to fetch detailed description via `schedule_detail`.
 
         Falls back to the description available in `librus_event.data` if any

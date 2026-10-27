@@ -5,16 +5,16 @@ description = "Synchronize librus schedule with google calendar"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "gcsa>=2.5.1",
-    "librus-apix>=1.5.1",
-    "packaging>=25.0",
-    "python-dateutil>=2.9.0.post0",
+    "gcsa>=2.7.0",
+    "librus-apix>=1.6.0",
+    "packaging>=26.3",
+    "python-dateutil>=3.0.0",
     "retry>=0.9.2",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.11.10",
+    "ruff>=0.17.3",
 ]
 
 [tool.setuptools]

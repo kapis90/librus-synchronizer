@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Central logging configuration for the synchronizer.
 
 Provides a simple setup function that configures a console handler and an
@@ -9,11 +8,10 @@ startup (for example in `execute.py`).
 from __future__ import annotations
 
 import logging
-from logging import StreamHandler, FileHandler, Formatter
-from typing import Optional
+from logging import FileHandler, Formatter, StreamHandler
 
 
-def setup_logging(debug: bool = False, log_file: Optional[str] = None) -> None:
+def setup_logging(debug: bool = False, log_file: str | None = None) -> None:
     """Configure root logger.
 
     Args:

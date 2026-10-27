@@ -1,12 +1,11 @@
-# -*- coding: utf-8 -*-
-import os
-from datetime import datetime
 import logging
+import os
+from datetime import date
 
 from dateutil.relativedelta import relativedelta
 from librus_apix.client import Client, Token, new_client
 from retry import retry
-from urllib3.exceptions import MaxRetryError, ConnectionError, ProtocolError
+from urllib3.exceptions import ConnectionError, MaxRetryError, ProtocolError
 
 from google_calendar_wrapper import GoogleCalendarWrapper
 from librus_synchronizer import LibrusSynchronizer
@@ -41,7 +40,7 @@ def main():
         librus_client=client,
         calendar=calendar,
     )
-    today = datetime.today()
+    today = date.today()
     next_month = today + relativedelta(months=1)
 
     try:

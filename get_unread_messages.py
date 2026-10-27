@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Fetch unread Librus messages and print them as JSON for webhook use.
 
 Stdout contains ONLY the JSON payload (logs go to stderr), so a workflow
@@ -16,7 +15,6 @@ import logging
 import os
 import re
 import sys
-from typing import List
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Tag
@@ -25,7 +23,7 @@ from librus_apix.exceptions import ParseError
 from librus_apix.helpers import no_access_check
 from librus_apix.messages import Message, get_max_page_number, message_content
 from retry import retry
-from urllib3.exceptions import MaxRetryError, ConnectionError, ProtocolError
+from urllib3.exceptions import ConnectionError, MaxRetryError, ProtocolError
 
 from logging_config import setup_logging
 
@@ -74,9 +72,7 @@ def _is_unread(title_cell: Tag) -> bool:
             style = " ".join(style)
         if style and _UNREAD_STYLE_RE.search(str(style)):
             return True
-    if title_cell.find(["b", "strong"]) is not None:
-        return True
-    return False
+    return title_cell.find(["b", "strong"]) is not None
 
 
 def _raw_link(cell: Tag) -> str:
@@ -115,7 +111,7 @@ def _content_ref(client: Client, raw_href: object) -> str:
     return path.rstrip("/").split("/")[-1].strip()
 
 
-def _parse_inbox(soup: BeautifulSoup) -> List[Message]:
+def _parse_inbox(soup: BeautifulSoup) -> list[Message]:
     """Parse an inbox page into Message objects, skipping malformed rows."""
     table = soup.find("table", attrs={"class": "decorated stretch"})
     if table is None:
@@ -128,7 +124,7 @@ def _parse_inbox(soup: BeautifulSoup) -> List[Message]:
         return []
     if len(rows) == 1 and rows[0].text.strip() == "Brak wiadomości":
         return []
-    messages: List[Message] = []
+    messages: list[Message] = []
     for row in rows:
         cells = row.find_all("td") if isinstance(row, Tag) else []
         if len(cells) < 6:
@@ -163,7 +159,7 @@ def _parse_inbox(soup: BeautifulSoup) -> List[Message]:
     return messages
 
 
-def _fetch_received_page(client: Client, page: int) -> List[Message]:
+def _fetch_received_page(client: Client, page: int) -> list[Message]:
     """Fetch and parse one inbox page (1-based)."""
     payload = {
         _PAGE_PARAM: str(page),
@@ -182,7 +178,7 @@ def _page_cap() -> int:
         return _DEFAULT_MAX_PAGES
 
 
-def fetch_all_received(client: Client) -> List[Message]:
+def fetch_all_received(client: Client) -> list[Message]:
     """Fetch all inbox pages, stopping early on the first empty page."""
     try:
         max_page_hint = get_max_page_number(client)
@@ -199,7 +195,7 @@ def fetch_all_received(client: Client) -> List[Message]:
     cap = _page_cap()
     if max_page_hint is not None:
         cap = min(cap, max(1, max_page_hint + 1))
-    all_messages: List[Message] = []
+    all_messages: list[Message] = []
     seen_hrefs: set[str] = set()
     for page in range(1, cap + 1):
         try:
