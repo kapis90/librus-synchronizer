@@ -1,0 +1,54 @@
+name: Get Unread Announcements
+
+on:
+  workflow_dispatch:
+    inputs:
+      resumeUrl:
+        description: "Resume URL"
+        required: false
+        type: string
+      who:
+        description: "Who to get announcements for (Tosia or Dorota)"
+        required: true
+        options: [Tosia, Dorota]
+        type: choice
+  repository_dispatch:
+    types: [get-announcements]
+
+jobs:
+  get-announcements:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install dependencies with uv
+        run: uv sync
+
+      - name: Run announcements script
+        id: get_announcements
+        env:
+          LIBRUS_USERNAME: ${{ (github.event.inputs.who || github.event.client_payload.who) == 'Tosia' && secrets.LIBRUS_USERNAME_T || secrets.LIBRUS_USERNAME_D }}
+          LIBRUS_PASSWORD: ${{ secrets.LIBRUS_PASSWORD }}
+        run: |
+          # Keep announcement contents out of GitHub logs; only retain the payload for webhook delivery.
+          uv run get_unread_announcements.py > payload.json
+          count=$(python3 -c "import json; print(len(json.load(open('payload.json')).get('announcements', [])))")
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Send webhook
+        env:
+          RESUME_URL: ${{ github.event.inputs.resumeUrl || github.event.client_payload.resumeUrl }}
+        run: |
+          if [ -z "$RESUME_URL" ]; then
+            echo "resumeUrl not provided, skipping webhook"
+            exit 0
+          fi
+          curl --fail-with-body -X POST "$RESUME_URL" \
+            -H "Content-Type: application/json" \
+            --data @payload.json
