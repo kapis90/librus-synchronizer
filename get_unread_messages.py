@@ -46,9 +46,7 @@ logger = logging.getLogger(__name__)
 # "font-weight:bold" or "FONT-WEIGHT: BOLD", which the upstream
 # librus_apix parser misses (it uses an exact substring check).
 # Only used by the legacy HTML fallback.
-_UNREAD_STYLE_RE = re.compile(
-    r"font-weight\s*:\s*bold", re.IGNORECASE
-)
+_UNREAD_STYLE_RE = re.compile(r"font-weight\s*:\s*bold", re.IGNORECASE)
 
 # Safety cap for inbox pagination (overridable via MAX_PAGES env var).
 _DEFAULT_MAX_PAGES = 10
@@ -347,8 +345,7 @@ def fetch_unread(client: Client) -> list[dict]:
             counts = api.get_unread_counts()
             inbox_count = max(0, int(counts.get("inbox", 0)))
             logger.info(
-                "Librus reports %d unread message(s) in the inbox "
-                "(counts=%s)",
+                "Librus reports %d unread message(s) in the inbox (counts=%s)",
                 inbox_count,
                 counts,
             )
@@ -374,8 +371,7 @@ def fetch_unread(client: Client) -> list[dict]:
                 )
             if len(items) < inbox_count:
                 logger.warning(
-                    "Unread counter reports %d message(s) but the listing "
-                    "returned %d",
+                    "Unread counter reports %d message(s) but the listing returned %d",
                     inbox_count,
                     len(items),
                 )

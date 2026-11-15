@@ -152,9 +152,7 @@ class LibrusMessagesApi:
         payload = self._get_json(_UNREAD_COUNTS_URL)
         data = payload.get("data")
         if not isinstance(data, dict):
-            raise LibrusMessagesApiError(
-                "unread counters payload has no data object"
-            )
+            raise LibrusMessagesApiError("unread counters payload has no data object")
         counts: dict[str, int] = {}
         for key, value in data.items():
             try:
@@ -188,9 +186,7 @@ class LibrusMessagesApi:
             payload = self._get_json(_INBOX_MESSAGES_URL, params)
             batch = payload.get("data")
             if not isinstance(batch, list):
-                raise LibrusMessagesApiError(
-                    "inbox listing payload has no data array"
-                )
+                raise LibrusMessagesApiError("inbox listing payload has no data array")
             if isinstance(payload.get("total"), int):
                 total = payload["total"]
             if not batch:
@@ -208,9 +204,7 @@ class LibrusMessagesApi:
             if total is not None and len(items) >= total:
                 break
             if added == 0:
-                logger.info(
-                    "Page %d repeats already-seen messages; stopping", page
-                )
+                logger.info("Page %d repeats already-seen messages; stopping", page)
                 break
         else:
             logger.warning(
@@ -225,14 +219,10 @@ class LibrusMessagesApi:
         **Marks the message as read in Librus.** Returns the parsed
         ``data`` object from the API response.
         """
-        payload = self._get_json(
-            _INBOX_MESSAGE_URL.format(message_id=message_id)
-        )
+        payload = self._get_json(_INBOX_MESSAGE_URL.format(message_id=message_id))
         data = payload.get("data")
         if not isinstance(data, dict):
-            raise LibrusMessagesApiError(
-                f"unexpected payload for message {message_id}"
-            )
+            raise LibrusMessagesApiError(f"unexpected payload for message {message_id}")
         return data
 
     # ------------------------------------------------------------------ #
@@ -262,11 +252,13 @@ class LibrusMessagesApi:
         date = _text(data.get("sendDate")) or _text(item.get("sendDate"))
         if "T" in date:
             date = date.replace("T", " ")
-        sender_name = _text(data.get("senderName")) or _text(
-            item.get("senderName")
-        )
+        sender_name = _text(data.get("senderName")) or _text(item.get("senderName"))
         group = _text(data.get("senderGroup"))
-        author = f"{sender_name} ({sender_name}) [{group}]" if sender_name and group else sender_name
+        author = (
+            f"{sender_name} ({sender_name}) [{group}]"
+            if sender_name and group
+            else sender_name
+        )
         return {
             "id": f"{message_id}/f0",
             "title": _text(data.get("topic")) or _text(item.get("topic")),
