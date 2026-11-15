@@ -3,13 +3,27 @@
 Stdout contains ONLY the JSON payload (logs go to stderr), so a workflow
 can safely redirect stdout to a file and POST it.
 
+Unread detection uses the current Librus messages API
+(``https://wiadomosci.librus.pl``), which reports the read state explicitly
+with the ``readDate`` field. That makes the result authoritative: the script
+first reads Librus' own unread counter, so an empty ``messages`` array means
+Librus really has no unread messages. The legacy HTML inbox is only used as a
+fallback when the new API is unavailable.
+
+Fetching a message body (``GET /api/inbox/messages/<id>``) marks that message
+as read in Librus, so every unread message is reported exactly once. Listing
+messages and reading the unread counter have no side effects.
+
 Environment:
-    FETCH_MODE: "unread" (default) filters by unread flag; "last" skips
-        the unread check and returns the most recent inbox message.
-        "last" is intended for testing the downstream webhook plumbing
-        when there are no unread messages.
+    FETCH_MODE: "unread" (default) reports only unread messages; "last"
+        reports the most recent inbox message regardless of read state
+        (for testing webhook plumbing).
+    MAX_PAGES: safety cap for paginated inbox listings (default 10).
+    DEBUG, LOG_FILE: logging configuration.
 """
 
+import base64
+import html
 import json
 import logging
 import os
@@ -17,11 +31,14 @@ import re
 import sys
 from urllib.parse import urlparse
 
+import requests
 from bs4 import BeautifulSoup, Tag
+from librus_apix import urls
 from librus_apix.client import Client, Token, new_client
 from librus_apix.exceptions import ParseError
 from librus_apix.helpers import no_access_check
 from librus_apix.messages import Message, get_max_page_number, message_content
+from requests import Session
 from retry import retry
 from urllib3.exceptions import ConnectionError, MaxRetryError, ProtocolError
 
@@ -29,9 +46,21 @@ from logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
+# Current Librus messages API. Cookies for wiadomosci.librus.pl are issued
+# by the Synergia bootstrap page, so it has to be opened in the same session.
+_BOOTSTRAP_URL = "https://synergia.librus.pl/wiadomosci3"
+_API_BASE = "https://wiadomosci.librus.pl/api"
+_UNREAD_COUNTS_URL = f"{_API_BASE}/inbox/unreadMessagesCount"
+_INBOX_MESSAGES_URL = f"{_API_BASE}/inbox/messages"
+_INBOX_MESSAGE_URL = _INBOX_MESSAGES_URL + "/{message_id}"
+
+_REQUEST_TIMEOUT = 30  # seconds
+_PAGE_SIZE = 100
+
 # Matches "font-weight: bold" tolerating whitespace/case variants such as
 # "font-weight:bold" or "FONT-WEIGHT: BOLD", which the upstream
 # librus_apix parser misses (it uses an exact substring check).
+# Only used by the legacy HTML fallback.
 _UNREAD_STYLE_RE = re.compile(r"font-weight\s*:\s*bold", re.IGNORECASE)
 
 # Safety cap for inbox pagination (overridable via MAX_PAGES env var).
@@ -41,6 +70,14 @@ _DEFAULT_MAX_PAGES = 10
 _PAGE_PARAM = "numer_strony105"
 _PAGE_CONTAINER_PARAM = "porcjowanie_pojemnik105"
 _PAGE_CONTAINER_ID = "105"
+
+_BR_RE = re.compile(r"<\s*/?\s*br\s*/?\s*>", re.IGNORECASE)
+_TAG_RE = re.compile(r"<[^>]+>")
+_MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
+
+
+class _NewApiUnavailable(RuntimeError):
+    """Raised when the current messages API cannot be used."""
 
 
 @retry(exceptions=(MaxRetryError, ConnectionError, ProtocolError), tries=3, delay=2)
@@ -57,6 +94,291 @@ def _require_env(name: str) -> str:
         logger.error("Missing required environment variable: %s", name)
         sys.exit(1)
     return value
+
+
+def _page_cap() -> int:
+    try:
+        return max(1, int(os.getenv("MAX_PAGES", str(_DEFAULT_MAX_PAGES))))
+    except ValueError:
+        logger.warning("Invalid MAX_PAGES value; using default %d", _DEFAULT_MAX_PAGES)
+        return _DEFAULT_MAX_PAGES
+
+
+def _as_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _text(value: object) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _decode_base64(value: object) -> str:
+    """Decode a base64 string; return "" for empty or malformed input."""
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    data = value.strip()
+    padding = "=" * (-len(data) % 4)
+    try:
+        raw = base64.b64decode(data + padding, validate=False)
+    except ValueError:
+        logger.warning("Could not decode base64 message content")
+        return ""
+    return raw.decode("utf-8", errors="ignore")
+
+
+def _html_to_text(value: str) -> str:
+    """Convert Librus message HTML into plain text, keeping line breaks."""
+    if not value:
+        return ""
+    text = _BR_RE.sub("\n", value)
+    text = _TAG_RE.sub("", text)
+    text = html.unescape(text).replace("\xa0", " ")
+    text = _MULTI_NEWLINE_RE.sub("\n\n", text)
+    return "\n".join(line.rstrip() for line in text.splitlines()).strip()
+
+
+def _format_author(data: dict) -> str:
+    """Build the author label in the format used by the legacy payload."""
+    name = _text(data.get("senderName"))
+    if not name:
+        name = " ".join(
+            part
+            for part in (
+                _text(data.get("senderFirstName")),
+                _text(data.get("senderLastName")),
+            )
+            if part
+        )
+    group = _text(data.get("senderGroup"))
+    if name and group:
+        return f"{name} ({name}) [{group}]"
+    return name
+
+
+# ---------------------------------------------------------------------------
+# Current messages API
+# ---------------------------------------------------------------------------
+
+
+def _open_messages_session(client: Client) -> Session:
+    """Open a session authorised for the Librus messages API (with cookies)."""
+    session = Session()
+    session.headers.update(urls.HEADERS)
+    session.cookies.update(client.token.access_cookies())
+    if client.proxy:
+        session.proxies.update(client.proxy)
+    try:
+        response = session.get(_BOOTSTRAP_URL, timeout=_REQUEST_TIMEOUT)
+        response.raise_for_status()
+    except Exception as exc:
+        session.close()
+        raise _NewApiUnavailable(f"messages API bootstrap failed: {exc}") from exc
+    return session
+
+
+@retry(
+    exceptions=(requests.ConnectionError, requests.Timeout),
+    tries=3,
+    delay=2,
+    backoff=2,
+    logger=logger,
+)
+def _request_json(session: Session, url: str, params: dict | None = None) -> dict:
+    """GET a JSON object from the messages API or raise a clear error."""
+    response = session.get(url, params=params, timeout=_REQUEST_TIMEOUT)
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        raise _NewApiUnavailable(
+            f"HTTP {response.status_code} from {url}"
+        ) from exc
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise _NewApiUnavailable(f"invalid JSON from {url}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise _NewApiUnavailable(f"unexpected JSON payload from {url}")
+    return payload
+
+
+def _unread_counts(session: Session) -> dict:
+    """Return Librus' unread counters (``{"inbox": N, ...}``)."""
+    payload = _request_json(session, _UNREAD_COUNTS_URL)
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise _NewApiUnavailable("unread counters payload has no data object")
+    return data
+
+
+def _list_inbox(
+    session: Session,
+    *,
+    unread_only: bool,
+    page_size: int = _PAGE_SIZE,
+    max_pages: int | None = None,
+) -> list[dict]:
+    """List inbox messages page by page (newest first)."""
+    page_limit = max_pages if max_pages is not None else _page_cap()
+    items: list[dict] = []
+    seen: set[str] = set()
+    total: int | None = None
+    for page in range(1, page_limit + 1):
+        params: dict[str, str] = {"limit": str(page_size), "page": str(page)}
+        if unread_only:
+            params["unreadOnly"] = "1"
+        payload = _request_json(session, _INBOX_MESSAGES_URL, params)
+        batch = payload.get("data")
+        if not isinstance(batch, list):
+            raise _NewApiUnavailable("inbox listing payload has no data array")
+        if isinstance(payload.get("total"), int):
+            total = payload["total"]
+        if not batch:
+            break
+        added = 0
+        for item in batch:
+            if not isinstance(item, dict):
+                continue
+            message_id = _text(item.get("messageId"))
+            if not message_id or message_id in seen:
+                continue
+            seen.add(message_id)
+            items.append(item)
+            added += 1
+        if total is not None and len(items) >= total:
+            break
+        if added == 0:
+            logger.info("Page %d repeats already-seen messages; stopping", page)
+            break
+    else:
+        logger.warning(
+            "Reached MAX_PAGES=%d while listing messages; results may be partial",
+            page_limit,
+        )
+    return items
+
+
+def _build_entry(session: Session, item: dict) -> dict | None:
+    """Fetch one message body and build its webhook payload entry.
+
+    Fetching the body marks the message as read in Librus, so the message is
+    reported only once. Returns None (after logging) when the body cannot be
+    fetched, so the caller can skip it.
+    """
+    message_id = _text(item.get("messageId"))
+    if not message_id:
+        logger.warning("Skipping inbox item without messageId: %r", item)
+        return None
+    try:
+        payload = _request_json(
+            session, _INBOX_MESSAGE_URL.format(message_id=message_id)
+        )
+    except Exception:
+        logger.warning(
+            "Skipping message id=%s: failed to fetch content",
+            message_id,
+            exc_info=True,
+        )
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        logger.warning("Skipping message id=%s: unexpected payload", message_id)
+        return None
+
+    date = _text(data.get("sendDate")) or _text(item.get("sendDate"))
+    if "T" in date:
+        date = date.replace("T", " ")
+    return {
+        # Keep the legacy "<id>/f0" shape so downstream consumers that
+        # already store message ids keep working.
+        "id": f"{message_id}/f0",
+        "title": _text(data.get("topic")) or _text(item.get("topic")),
+        "content": _html_to_text(_decode_base64(data.get("Message"))),
+        "author": _format_author(data) or _text(item.get("senderName")),
+        "date": date,
+        "has_attachment": bool(data.get("attachments"))
+        or bool(item.get("isAnyFileAttached")),
+    }
+
+
+def _fetch_unread_new(session: Session) -> list[dict]:
+    """Report unread messages using the current messages API."""
+    counts = _unread_counts(session)
+    inbox_count = max(0, _as_int(counts.get("inbox")))
+    logger.info(
+        "Librus reports %d unread message(s) in the inbox (counts=%s)",
+        inbox_count,
+        counts,
+    )
+    if inbox_count == 0:
+        return []
+
+    items = _list_inbox(session, unread_only=True)
+    logger.info("Listed %d unread message(s)", len(items))
+    if not items:
+        # The unread counter was non-zero a moment ago; it can drop to zero if
+        # somebody read the message in the Librus app in the meantime.
+        latest = max(0, _as_int(_unread_counts(session).get("inbox")))
+        if latest == 0:
+            logger.info(
+                "Unread messages were read elsewhere while this run was listing; "
+                "reporting an empty list"
+            )
+            return []
+        raise RuntimeError(
+            f"Librus reports {latest} unread message(s), but the listing returned "
+            "none; refusing to report an empty list"
+        )
+    if len(items) < inbox_count:
+        logger.warning(
+            "Unread counter reports %d message(s) but the listing returned %d",
+            inbox_count,
+            len(items),
+        )
+
+    entries: list[dict] = []
+    seen_ids: set[str] = set()
+    for item in items:
+        entry = _build_entry(session, item)
+        if entry is None:
+            continue
+        if entry["id"] in seen_ids:
+            logger.warning("Skipping duplicate message id=%r", entry["id"])
+            continue
+        seen_ids.add(entry["id"])
+        entries.append(entry)
+
+    if not entries:
+        # Never send an empty payload when Librus says there is something
+        # unread: that is exactly the bug this check guards against.
+        raise RuntimeError(
+            f"Librus reports {inbox_count} unread message(s), but none could be "
+            "fetched; refusing to report an empty list"
+        )
+    return entries
+
+
+def _fetch_last_new(session: Session) -> list[dict]:
+    """Return a one-item list with the most recent inbox message."""
+    logger.warning(
+        "FETCH_MODE=last: returning most recent message regardless of "
+        "read state (testing only)"
+    )
+    items = _list_inbox(session, unread_only=False, page_size=1, max_pages=1)
+    if not items:
+        logger.info("Inbox is empty, nothing to report")
+        return []
+    entry = _build_entry(session, items[0])
+    if entry is None:
+        raise RuntimeError("Most recent message could not be fetched")
+    return [entry]
+
+
+# ---------------------------------------------------------------------------
+# Legacy HTML inbox (fallback only)
+# ---------------------------------------------------------------------------
 
 
 def _is_unread(title_cell: Tag) -> bool:
@@ -85,7 +407,7 @@ def _raw_link(cell: Tag) -> str:
     return ""
 
 
-def _content_ref(client: Client, raw_href: object) -> str:
+def _legacy_content_ref(client: Client, raw_href: object) -> str:
     """Build the content reference for message_content() without ever raising.
 
     Real inbox links look like ``/wiadomosci/1/5/<msgId>/f0`` and
@@ -139,8 +461,8 @@ def _parse_inbox(soup: BeautifulSoup) -> list[Message]:
         )
         unread = _is_unread(title_cell) if isinstance(title_cell, Tag) else False
         # Prefer the title-cell link (the message link); fall back to the
-        # author-cell link. The raw href is stored; _build_entry() resolves
-        # it against MESSAGE_URL when fetching content.
+        # author-cell link. The raw href is stored; _build_entry_legacy()
+        # resolves it against MESSAGE_URL when fetching content.
         href = ""
         if isinstance(title_cell, Tag):
             href = _raw_link(title_cell)
@@ -170,15 +492,7 @@ def _fetch_received_page(client: Client, page: int) -> list[Message]:
     return _parse_inbox(soup)
 
 
-def _page_cap() -> int:
-    try:
-        return max(1, int(os.getenv("MAX_PAGES", str(_DEFAULT_MAX_PAGES))))
-    except ValueError:
-        logger.warning("Invalid MAX_PAGES value; using default %d", _DEFAULT_MAX_PAGES)
-        return _DEFAULT_MAX_PAGES
-
-
-def fetch_all_received(client: Client) -> list[Message]:
+def _fetch_all_received(client: Client) -> list[Message]:
     """Fetch all inbox pages, stopping early on the first empty page."""
     try:
         max_page_hint = get_max_page_number(client)
@@ -227,13 +541,9 @@ def fetch_all_received(client: Client) -> list[Message]:
     return all_messages
 
 
-def _build_entry(client: Client, message: Message) -> dict | None:
-    """Fetch content for one message and build its payload dict.
-
-    Returns None (after logging) when the message has no usable link or its
-    content cannot be fetched, so callers can skip it.
-    """
-    ref = _content_ref(client, message.href)
+def _build_entry_legacy(client: Client, message: Message) -> dict | None:
+    """Fetch content for one message and build its payload dict."""
+    ref = _legacy_content_ref(client, message.href)
     if not ref:
         logger.warning(
             "Skipping message without usable link (title=%r author=%r href=%r)",
@@ -263,12 +573,41 @@ def _build_entry(client: Client, message: Message) -> dict | None:
     }
 
 
-def _select_last_message(client: Client) -> list:
-    """Return a one-item payload with the most recent inbox message.
+def _fetch_unread_legacy(client: Client) -> list[dict]:
+    """Report unread messages using the deprecated HTML inbox."""
+    logger.warning(
+        "Falling back to the legacy HTML inbox; unread detection may be less "
+        "reliable than the messages API"
+    )
+    messages = _fetch_all_received(client)
+    logger.info("Fetched %d message(s) from legacy inbox", len(messages))
 
-    Testing helper: ignores the unread flag. Only the first page is
-    needed since the newest message is listed first.
-    """
+    unread = [m for m in messages if m.unread]
+    logger.info("%d unread message(s) found in legacy inbox", len(unread))
+
+    entries: list[dict] = []
+    seen_ids: set[str] = set()
+    for message in unread:
+        entry = _build_entry_legacy(client, message)
+        if entry is None:
+            continue
+        entry_id = entry["id"]
+        if entry_id in seen_ids:
+            logger.warning("Skipping duplicate message id=%r", entry_id)
+            continue
+        seen_ids.add(entry_id)
+        entries.append(entry)
+
+    if unread and not entries:
+        raise RuntimeError(
+            f"Legacy inbox reports {len(unread)} unread message(s), but none "
+            "could be fetched; refusing to report an empty list"
+        )
+    return entries
+
+
+def _fetch_last_legacy(client: Client) -> list[dict]:
+    """Return a one-item list with the most recent legacy inbox message."""
     logger.warning(
         "FETCH_MODE=last: returning most recent message regardless of "
         "read state (testing only)"
@@ -278,11 +617,55 @@ def _select_last_message(client: Client) -> list:
         logger.info("Inbox is empty, nothing to report")
         return []
     for message in page:
-        entry = _build_entry(client, message)
+        entry = _build_entry_legacy(client, message)
         if entry is not None:
             return [entry]
-    logger.error("Most recent message(s) could not be fetched")
-    sys.exit(1)
+    raise RuntimeError("Most recent message could not be fetched")
+
+
+# ---------------------------------------------------------------------------
+# Mode dispatch
+# ---------------------------------------------------------------------------
+
+
+def fetch_unread(client: Client) -> list[dict]:
+    """Return payload entries for unread messages.
+
+    Falls back to the legacy HTML inbox only when the messages API cannot be
+    reached or does not have the expected shape *before* any message body is
+    fetched (so a partial run can never lose already-read messages).
+    """
+    try:
+        session = _open_messages_session(client)
+    except _NewApiUnavailable as exc:
+        logger.warning("Messages API unavailable: %s", exc)
+        return _fetch_unread_legacy(client)
+
+    try:
+        try:
+            return _fetch_unread_new(session)
+        except _NewApiUnavailable as exc:
+            logger.warning("Messages API unavailable: %s", exc)
+            return _fetch_unread_legacy(client)
+    finally:
+        session.close()
+
+
+def fetch_last(client: Client) -> list[dict]:
+    """Return a one-item payload with the most recent inbox message."""
+    try:
+        session = _open_messages_session(client)
+    except _NewApiUnavailable as exc:
+        logger.warning("Messages API unavailable: %s", exc)
+        return _fetch_last_legacy(client)
+
+    try:
+        return _fetch_last_new(session)
+    except _NewApiUnavailable as exc:
+        logger.warning("Messages API unavailable: %s", exc)
+        return _fetch_last_legacy(client)
+    finally:
+        session.close()
 
 
 def main():
@@ -302,33 +685,17 @@ def main():
     __acquire_librus_token(client, username, password)
 
     if mode == "last":
-        reported = _select_last_message(client)
+        reported = fetch_last(client)
         logger.info("Reporting %d message(s) (FETCH_MODE=last)", len(reported))
-        print(json.dumps({"messages": reported}, ensure_ascii=False))
-        return
+    else:
+        reported = fetch_unread(client)
+        if reported:
+            logger.info("Reporting %d unread message(s) with content", len(reported))
+        else:
+            logger.info("No unread messages; reporting an empty list")
 
-    messages = fetch_all_received(client)
-    logger.info("Fetched %d message(s) from inbox", len(messages))
-
-    unread = [m for m in messages if m.unread]
-    logger.info("%d unread message(s) found", len(unread))
-
-    unread_messages = []
-    seen_ids: set[str] = set()
-    for message in unread:
-        entry = _build_entry(client, message)
-        if entry is None:
-            continue
-        entry_id = entry["id"]
-        if entry_id in seen_ids:
-            logger.warning("Skipping duplicate message id=%r", entry_id)
-            continue
-        seen_ids.add(entry_id)
-        unread_messages.append(entry)
-
-    logger.info("Reporting %d unread message(s) with content", len(unread_messages))
     # Output as JSON for webhook payload (stdout must stay pure JSON)
-    payload = {"messages": unread_messages}
+    payload = {"messages": reported}
     print(json.dumps(payload, ensure_ascii=False))
 
 
